@@ -14,9 +14,11 @@ interface GenerateImagesResponse {
     generatedImagePaths: string[];
 }
 
-// Node 18+ / 20 punya global fetch, tidak perlu node-fetch
 export const generateImages = functions.https.onCall(
-    async (data: GenerateImagesRequest, context): Promise<GenerateImagesResponse> => {
+    async (
+        data: GenerateImagesRequest,
+        context,
+    ): Promise<GenerateImagesResponse> => {
         const uid = context.auth?.uid;
         if (!uid) {
             throw new functions.https.HttpsError(
@@ -39,7 +41,6 @@ export const generateImages = functions.https.onCall(
         const bucket = admin.storage().bucket();
         const file = bucket.file(originalImagePath);
 
-        // 1. Download original image dari Storage
         const [bytes] = await file.download();
         const base64Image = bytes.toString("base64");
 
@@ -52,7 +53,6 @@ export const generateImages = functions.https.onCall(
                     "Cozy cafe, laptop, lifestyle shot",
                 ];
 
-        // 2. Ambil GEMINI API KEY dari env/config
         const apiKey =
             process.env.GEMINI_API_KEY ||
             (functions.config().gemini && functions.config().gemini.key);
@@ -66,7 +66,6 @@ export const generateImages = functions.https.onCall(
 
         const generatedPaths: string[] = [];
 
-        // 3. Loop style → call Gemini → simpan ke Storage
         for (let i = 0; i < prompts.length; i++) {
             const prompt = prompts[i];
 

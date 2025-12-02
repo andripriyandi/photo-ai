@@ -3,8 +3,8 @@ import 'package:photo_ai/app/config/app_config.dart';
 import 'package:photo_ai/app/data/repositories/photo_session_repository_impl.dart';
 import 'package:photo_ai/app/presentation/pages/photo_ai_page.dart';
 
-void main() {
-  AppConfig.init();
+void main() async {
+  await AppConfig.init();
 
   runApp(const MyApp());
 }
