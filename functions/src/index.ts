@@ -17,9 +17,10 @@ interface GenerateImagesResponse {
 export const generateImages = functions.https.onCall(
     async (
         data: GenerateImagesRequest,
-        context,
+        context: functions.https.CallableContext,
     ): Promise<GenerateImagesResponse> => {
         const uid = context.auth?.uid;
+
         if (!uid) {
             throw new functions.https.HttpsError(
                 "unauthenticated",
@@ -70,10 +71,13 @@ export const generateImages = functions.https.onCall(
             const prompt = prompts[i];
 
             const res = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`,
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
                 {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: {
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": apiKey,
+                    },
                     body: JSON.stringify({
                         contents: [
                             {
@@ -126,9 +130,7 @@ export const generateImages = functions.https.onCall(
             const outputPath = `users/${uid}/sessions/${sessionId}/generated-${i}.png`;
             const outFile = bucket.file(outputPath);
 
-            await outFile.save(buffer, {
-                contentType: "image/png",
-            });
+            await outFile.save(buffer, { contentType: "image/png" });
 
             generatedPaths.push(outputPath);
         }

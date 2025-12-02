@@ -1,9 +1,12 @@
+// lib/data/repositories/photo_session_repository_impl.dart
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
+import 'package:photo_ai/app/config/app_config.dart';
 
 import '../../domain/entities/photo_session.dart';
 import '../../domain/repositories/photo_session_repository.dart';
@@ -19,10 +22,10 @@ class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
     FirebaseFunctions? functions,
-  }) : _auth = auth ?? FirebaseAuth.instance,
-       _firestore = firestore ?? FirebaseFirestore.instance,
-       _storage = storage ?? FirebaseStorage.instance,
-       _functions = functions ?? FirebaseFunctions.instance;
+  }) : _auth = auth ?? AppConfig.auth,
+       _firestore = firestore ?? AppConfig.firestore,
+       _storage = storage ?? AppConfig.storage,
+       _functions = functions ?? AppConfig.functions;
 
   String get _uid {
     final user = _auth.currentUser;
@@ -51,6 +54,10 @@ class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
   }) async {
     final sessionId = DateTime.now().millisecondsSinceEpoch.toString();
     final originalPath = await _uploadOriginal(originalFile, sessionId);
+
+    debugPrint(
+      'Calling generateImages as uid=$_uid, originalPath=$originalPath',
+    );
 
     final callable = _functions.httpsCallable("generateImages");
     final response = await callable.call<Map<String, dynamic>>({
