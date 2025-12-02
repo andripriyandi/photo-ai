@@ -1,0 +1,41 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "photo-ai-1e1fe",
+          "appId": "1:436693506162:android:9e07b9f7df419113024aeb",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "photo-ai-1e1fe",
+          "configurations": {
+            "android": "1:436693506162:android:9e07b9f7df419113024aeb",
+            "ios": "1:436693506162:ios:bb8b358bc275f125024aeb",
+            "macos": "1:436693506162:ios:bb8b358bc275f125024aeb",
+            "web": "1:436693506162:web:73657841182abdc5024aeb",
+            "windows": "1:436693506162:web:7572b964014f1730024aeb"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ]
+}
