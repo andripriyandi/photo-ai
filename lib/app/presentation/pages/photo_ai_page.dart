@@ -67,8 +67,22 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
         _generatedUrls = result.generatedUrls;
       });
     } catch (e) {
+      final raw = e.toString();
+      debugPrint('Photo AI error: $raw');
+
+      String friendlyMessage = "Something went wrong. Please try again.";
+
+      // Mapping error quota Gemini (seperti message yang kamu kirim)
+      if (raw.contains("You exceeded your current quota") ||
+          raw.contains("Quota exceeded for metric") ||
+          raw.contains("generate_content_free_tier_requests")) {
+        friendlyMessage =
+            "The Gemini API free-tier quota for this test project has been exceeded. "
+            "Please provide a Gemini API key or update the plan to continue generating images.";
+      }
+
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = friendlyMessage;
       });
     } finally {
       setState(() {
@@ -98,38 +112,55 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
         children: [
           _buildGradientBackground(),
           SafeArea(
-            child: Center(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutCubic,
-                padding: EdgeInsets.symmetric(
-                  horizontal: horizontalPadding,
-                  vertical: 24,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildHeader(),
-                    const SizedBox(height: 24),
-                    _buildControlsRow(),
-                    const SizedBox(height: 16),
-                    _buildUploadCard(),
-                    const SizedBox(height: 16),
-                    _buildErrorOrHint(),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 350),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        child: _buildResultSection(),
+            // ✅ Bungkus konten utama dengan LayoutBuilder + SingleChildScrollView
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  padding: EdgeInsets.zero,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 400),
+                        curve: Curves.easeOutCubic,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: horizontalPadding,
+                          vertical: 24,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildHeader(),
+                            const SizedBox(height: 24),
+                            _buildControlsRow(),
+                            const SizedBox(height: 16),
+                            _buildUploadCard(),
+                            const SizedBox(height: 16),
+                            _buildErrorOrHint(),
+                            const SizedBox(height: 12),
+                            // Karena sudah ada scroll di luar, tidak perlu Expanded di sini.
+                            // Supaya struktur tetap mirip, kita ganti Expanded dengan SizedBox + batas tinggi.
+                            SizedBox(
+                              height:
+                                  360, // tinggi kira-kira; bisa kamu adjust kalau mau
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 350),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                child: _buildResultSection(),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildBottomButton(),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    _buildBottomButton(),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
           ),
         ],
@@ -435,18 +466,20 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
 
   Widget _buildResultSection() {
     if (_isGenerating) {
-      return Column(
+      return Center(
         key: const ValueKey("loading"),
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
-          SizedBox(
-            width: 28,
-            height: 28,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          SizedBox(height: 12),
-          Text("Remixing your photo…", style: TextStyle(fontSize: 13)),
-        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(height: 12),
+            Text("Remixing your photo…", style: TextStyle(fontSize: 13)),
+          ],
+        ),
       );
     }
 

@@ -27,6 +27,15 @@ The UI is designed as a **clean, Apple Design Award–style single screen**: sim
 - `cloud_functions`
 - `image_picker`
 
+Additional points:
+
+- Uses **Anonymous Auth** only — no email/password or social providers.
+- Connects to **Firebase Emulator Suite** in development, and can be pointed to production Firebase if deployed.
+- The main UI is a **single page** (`photo_ai_page.dart`) that:
+  - Lets the user pick a portrait from the device
+  - Shows upload & generation progress
+  - Displays original + generated images in a responsive layout.
+
 ### Backend (Firebase)
 
 - Firebase Authentication (Anonymous)
@@ -35,24 +44,97 @@ The UI is designed as a **clean, Apple Design Award–style single screen**: sim
 - Cloud Functions (Node 20, **TypeScript**)
 - Google Gemini image generation API (via HTTPS call inside the Function)
 
+Additional points:
+
+- All AI calls and secrets stay in **Cloud Functions**.
+- The client never stores or exposes the Gemini API key.
+- Firestore stores per-user session metadata under `users/{uid}/sessions/{sessionId}`.
+- Storage stores original + generated images grouped per session.
+
 ---
 
 ## 2. High-Level Flow
 
-1. App starts → user is automatically signed in **anonymously**.
-2. User drops/selects a portrait on the **single main screen**.
-3. The app:
-   - Uploads the original image to **Cloud Storage**
-   - Calls a callable Cloud Function `generateImages` with the image path and a session id.
-4. The Cloud Function:
-   - Downloads the original image from Storage
-   - Calls the **Gemini image generation API** with several style prompts
-   - Stores each generated image back to Storage under the same session
-   - Returns the list of generated image paths.
-5. The Flutter app:
-   - Stores session metadata in Firestore (`users/{uid}/sessions/{sessionId}`)
-   - Resolves Storage paths to download URLs
-   - Displays the original + generated scenes in a responsive grid.
+1. **App initialization**
+
+   - Flutter app starts.
+   - `firebase_core` initializes Firebase.
+   - User is automatically signed in **anonymously** via `FirebaseAuth.instance.signInAnonymously()` if not already authenticated.
+
+2. **User selects a portrait**
+
+   - From the single main screen, the user taps a button to select an image from the gallery (using `image_picker`).
+   - Only portrait-style images are expected (no strict enforcement, but the UX is optimized for faces).
+
+3. **Upload original image**
+
+   - The app uploads the original image to **Cloud Storage** under a per-user, per-session path, for example:
+     - `uploads/{uid}/{sessionId}/original.jpg`
+   - After upload, the app calls a **callable Cloud Function**: `generateImages`.
+
+4. **Call Cloud Function: `generateImages`**
+
+   - The client sends:
+     - `originalImagePath` – the Storage path of the uploaded image
+     - `styles` – an array of style prompts (e.g., `"Cyberpunk city"`, `"Fantasy forest"`, etc.)
+     - `sessionId` – a unique ID (generated on the client, e.g., a timestamp or UUID)
+   - Example request payload:
+     ```json
+     {
+       "originalImagePath": "uploads/UID/SESSION_ID/original.jpg",
+       "styles": ["Cyberpunk city", "Fantasy forest", "Noir detective"],
+       "sessionId": "SESSION_ID"
+     }
+     ```
+
+5. **Cloud Function: download + call Gemini**
+
+   - The function:
+     - Resolves the Storage bucket and downloads the original image.
+     - Calls the **Gemini image generation API** (or NanoBanana-compatible endpoint) for each style.
+     - For each generated image, stores it back to Storage under the same session:
+       - `uploads/{uid}/{sessionId}/generated_{index}.jpg`
+     - Returns a list of **generated Storage paths** to the client:
+       ```ts
+       interface GenerateImagesResponse {
+         originalImagePath: string;
+         generatedImagePaths: string[];
+       }
+       ```
+
+6. **Store metadata in Firestore**
+
+   - After receiving the function response, the client writes a document to:
+     - `users/{uid}/sessions/{sessionId}`
+   - Example document shape:
+     ```json
+     {
+       "sessionId": "SESSION_ID",
+       "createdAt": "2025-12-03T12:00:00.000Z",
+       "originalImagePath": "uploads/UID/SESSION_ID/original.jpg",
+       "generatedImagePaths": [
+         "uploads/UID/SESSION_ID/generated_0.jpg",
+         "uploads/UID/SESSION_ID/generated_1.jpg",
+         "uploads/UID/SESSION_ID/generated_2.jpg"
+       ],
+       "styles": ["Cyberpunk city", "Fantasy forest", "Noir detective"],
+       "status": "completed",
+       "errorMessage": null
+     }
+     ```
+
+7. **Display in the UI**
+
+   - The app converts the Storage paths into **download URLs** (via `getDownloadURL`).
+   - The main screen shows:
+     - The **original portrait**.
+     - The set of **generated “remix” scenes** in a responsive grid.
+   - The layout adapts to phone/tablet sizes while remaining a single main screen.
+
+8. **Error handling**
+   - If something fails (upload, function call, or Firestore write), the app:
+     - Shows a user-friendly error message.
+     - Keeps the UI in a safe state, without exposing any technical details or secrets.
 
 All AI calls and secrets stay in the **Cloud Function**, not in the client.
 
@@ -88,17 +170,3 @@ photo_ai_test/
 ├─ storage.rules
 └─ README.md
 ```
-## 4. Deployment Notes & Limitations
-
-This project is built to use **Firebase Cloud Functions (gen 2, Node 20)** to call the Gemini image generation API.  
-As of now, deploying Cloud Functions to Firebase requires the project to be on the **Blaze (pay-as-you-go) plan**. The free Spark plan cannot enable some required APIs (such as `cloudbuild.googleapis.com` and `artifactregistry.googleapis.com`), so deployment from my personal account is intentionally skipped.
-
-For this take-home project:
-
-- The **function code is fully implemented** in `functions/src/index.ts` and compiles successfully with `npm run build`.
-- Locally, the function can be run via the **Firebase Emulator Suite**:
-
-  ```bash
-  cd functions
-  npm run build
-  npm run serve
