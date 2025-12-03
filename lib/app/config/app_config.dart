@@ -12,7 +12,7 @@ class AppConfig {
   static late FirebaseFirestore firestore;
   static late FirebaseStorage storage;
   static late FirebaseFunctions functions;
-  static const String functionsRegion = 'us-central1';
+  static const String functionsRegion = 'asia-southeast2';
 
   static Future<void> init() async {
     WidgetsFlutterBinding.ensureInitialized();
@@ -29,22 +29,13 @@ class AppConfig {
       region: functionsRegion,
     );
 
-    const host = '10.0.2.2';
-    const authPort = 9099;
-    const firestorePort = 8080;
-    const storagePort = 9199;
-    const functionsPort = 5001;
-
-    auth.useAuthEmulator(host, authPort);
-    firestore.useFirestoreEmulator(host, firestorePort);
-    storage.useStorageEmulator(host, storagePort);
-    functions.useFunctionsEmulator(host, functionsPort);
-
     if (auth.currentUser == null) {
       final cred = await auth.signInAnonymously();
       debugPrint('Signed in anonymously as ${cred.user?.uid}');
     } else {
       debugPrint('Already signed in as ${auth.currentUser!.uid}');
     }
+
+    debugPrint('Firebase initialized in PROD (no emulators).');
   }
 }

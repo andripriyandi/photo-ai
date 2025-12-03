@@ -2,7 +2,9 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../../domain/repositories/photo_session_repository.dart';
 
@@ -28,16 +30,20 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
   String _selectedStyle = "Travel";
   String _selectedAspect = "4:5";
 
+  static const List<String> _styleOrder = ["Travel", "City", "Cozy"];
+
   Future<void> _pickImage() async {
+    if (_isGenerating) return;
+
     setState(() {
       _errorMessage = null;
     });
 
     final picked = await _picker.pickImage(
       source: ImageSource.gallery,
-      maxWidth: 2000,
-      maxHeight: 2000,
-      imageQuality: 92,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 65,
     );
 
     if (picked == null) return;
@@ -46,6 +52,8 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
       _localImage = File(picked.path);
       _originalUrl = null;
       _generatedUrls = [];
+      _selectedStyle = "Travel";
+      _selectedAspect = "4:5";
     });
   }
 
@@ -72,7 +80,6 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
 
       String friendlyMessage = "Something went wrong. Please try again.";
 
-      // Mapping error quota Gemini (seperti message yang kamu kirim)
       if (raw.contains("You exceeded your current quota") ||
           raw.contains("Quota exceeded for metric") ||
           raw.contains("generate_content_free_tier_requests")) {
@@ -89,6 +96,32 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
         _isGenerating = false;
       });
     }
+  }
+
+  int _styleIndexFor(String style) {
+    final idx = _styleOrder.indexOf(style);
+    if (idx < 0) return 0;
+    if (idx >= _generatedUrls.length) return 0;
+    return idx;
+  }
+
+  double _aspectRatioFromString(String aspect) {
+    switch (aspect) {
+      case "1:1":
+        return 1.0;
+      case "9:16":
+        return 9 / 16;
+      case "4:5":
+      default:
+        return 4 / 5;
+    }
+  }
+
+  String _styleLabelForIndex(int index) {
+    if (index >= 0 && index < _styleOrder.length) {
+      return _styleOrder[index];
+    }
+    return "Scene ${index + 1}";
   }
 
   @override
@@ -112,7 +145,6 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
         children: [
           _buildGradientBackground(),
           SafeArea(
-            // ✅ Bungkus konten utama dengan LayoutBuilder + SingleChildScrollView
             child: LayoutBuilder(
               builder: (context, constraints) {
                 return SingleChildScrollView(
@@ -140,11 +172,8 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
                             const SizedBox(height: 16),
                             _buildErrorOrHint(),
                             const SizedBox(height: 12),
-                            // Karena sudah ada scroll di luar, tidak perlu Expanded di sini.
-                            // Supaya struktur tetap mirip, kita ganti Expanded dengan SizedBox + batas tinggi.
                             SizedBox(
-                              height:
-                                  360, // tinggi kira-kira; bisa kamu adjust kalau mau
+                              height: 380,
                               child: AnimatedSwitcher(
                                 duration: const Duration(milliseconds: 350),
                                 switchInCurve: Curves.easeOutCubic,
@@ -239,8 +268,8 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
           const SizedBox(height: 8),
           Text(
             hasResult
-                ? "Tap a scene to preview, then long-press to save or share."
-                : "Drop in a simple portrait. We’ll turn it into travel-ready,\nsocial-ready scenes with one tap.",
+                ? "Tap a scene style to preview, then long-press a tile to save or share."
+                : "Add a simple portrait and we’ll turn it into travel-ready, social-ready scenes with one tap.",
             style: TextStyle(
               fontSize: 13,
               height: 1.4,
@@ -354,9 +383,9 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
     );
   }
 
-  // ---------- Upload card ----------
-
   Widget _buildUploadCard() {
+    final hasLocal = _localImage != null;
+
     return GestureDetector(
       onTap: _pickImage,
       child: AnimatedContainer(
@@ -366,9 +395,9 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(22),
           border: Border.all(
-            color: _localImage == null
-                ? Colors.white.withValues(alpha: .16)
-                : Colors.blueAccent.withValues(alpha: .7),
+            color: hasLocal
+                ? Colors.blueAccent.withValues(alpha: .7)
+                : Colors.white.withValues(alpha: .16),
           ),
           gradient: LinearGradient(
             colors: [
@@ -428,14 +457,14 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          hasLocal ? "Change source photo" : "Drop in your portrait",
+          hasLocal ? "Use a different photo" : "Add a portrait photo",
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 4),
         Text(
           hasLocal
-              ? _localImage!.path.split("/").last
-              : "Use a clear, front-facing photo. One person works best.",
+              ? "${_localImage!.path.split("/").last}\nTap to replace this photo."
+              : "Use a clear, front-facing photo of one person for best results.",
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(fontSize: 12, color: Colors.grey.shade300),
@@ -443,8 +472,6 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
       ],
     );
   }
-
-  // ---------- Hint / error ----------
 
   Widget _buildErrorOrHint() {
     if (_errorMessage != null) {
@@ -456,7 +483,7 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
 
     return Text(
       _localImage == null
-          ? "Your photo stays private: processing runs through a secured Firebase Cloud Function."
+          ? "Your photo stays private: processing is handled through a secured Firebase Cloud Function."
           : "Ready when you are. Tap “Generate remix” and we’ll create multiple scenes.",
       style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
     );
@@ -477,7 +504,11 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
             SizedBox(height: 12),
-            Text("Remixing your photo…", style: TextStyle(fontSize: 13)),
+            Text(
+              "Remixing your photo…\nThis can take a few moments.",
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13),
+            ),
           ],
         ),
       );
@@ -490,12 +521,15 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
         child: Padding(
           padding: const EdgeInsets.only(top: 8.0),
           child: Text(
-            "Once generated, your original and remixed scenes will appear here in a responsive grid.",
+            "Once generated, your original and remixed scenes will appear here. "
+            "Choose a style above to focus on Travel, City, or Cozy scenes.",
             style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
           ),
         ),
       );
     }
+
+    final aspectRatio = _aspectRatioFromString(_selectedAspect);
 
     return ListView(
       key: const ValueKey("results"),
@@ -509,15 +543,34 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: AspectRatio(
-              aspectRatio: 3 / 4,
-              child: Image.network(_originalUrl!, fit: BoxFit.cover),
+              aspectRatio: aspectRatio,
+              child: Image.network(
+                _originalUrl!,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return _buildShimmerPlaceholder(
+                    borderRadius: 20,
+                    showLabelSkeleton: false,
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) =>
+                    _buildErrorImagePlaceholder(),
+              ),
             ),
           ),
           const SizedBox(height: 18),
         ],
         if (_generatedUrls.isNotEmpty) ...[
+          Text(
+            "$_selectedStyle scene",
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          _buildFocusedGeneratedScene(aspectRatio),
+          const SizedBox(height: 16),
           const Text(
-            "Remixed scenes",
+            "All remixed scenes",
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
@@ -534,11 +587,19 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
                   crossAxisCount: crossAxisCount,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
-                  childAspectRatio: 3 / 4,
+                  childAspectRatio: aspectRatio,
                 ),
                 itemBuilder: (context, index) {
                   final url = _generatedUrls[index];
-                  return _buildGeneratedTile(url, index);
+                  final styleLabel = _styleLabelForIndex(index);
+                  final isSelected =
+                      _styleOrder.indexOf(_selectedStyle) == index;
+                  return _buildGeneratedTile(
+                    url: url,
+                    index: index,
+                    styleLabel: styleLabel,
+                    isSelected: isSelected,
+                  );
                 },
               );
             },
@@ -548,15 +609,112 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
     );
   }
 
-  Widget _buildGeneratedTile(String url, int index) {
+  Widget _buildFocusedGeneratedScene(double aspectRatio) {
+    final index = _styleIndexFor(_selectedStyle);
+    final url = _generatedUrls[index];
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Stack(
+        children: [
+          AspectRatio(
+            aspectRatio: aspectRatio,
+            child: Image.network(
+              url,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return _buildShimmerPlaceholder(
+                  borderRadius: 20,
+                  showLabelSkeleton: true,
+                );
+              },
+              errorBuilder: (context, error, stackTrace) =>
+                  _buildErrorImagePlaceholder(),
+            ),
+          ),
+          Positioned(
+            top: 10,
+            left: 10,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                color: Colors.black.withValues(alpha: .45),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.style_rounded,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _selectedStyle,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGeneratedTile({
+    required String url,
+    required int index,
+    required String styleLabel,
+    required bool isSelected,
+  }) {
     return GestureDetector(
-      onLongPress: () {},
+      onTap: () {
+        if (index >= 0 && index < _styleOrder.length) {
+          setState(() {
+            _selectedStyle = _styleOrder[index];
+          });
+        }
+      },
+      onLongPress: () {
+        _showImageActionsSheet(url: url, styleLabel: styleLabel);
+      },
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.network(url, fit: BoxFit.cover),
+            Image.network(
+              url,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return _buildShimmerPlaceholder(
+                  borderRadius: 18,
+                  showLabelSkeleton: true,
+                );
+              },
+              errorBuilder: (context, error, stackTrace) =>
+                  _buildErrorImagePlaceholder(),
+            ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: .55),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
             Positioned(
               top: 8,
               right: 8,
@@ -565,6 +723,12 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999),
                   color: Colors.black.withValues(alpha: .45),
+                  border: isSelected
+                      ? Border.all(
+                          color: Colors.white.withValues(alpha: .9),
+                          width: 1,
+                        )
+                      : null,
                 ),
                 child: Text(
                   "#${index + 1}",
@@ -574,6 +738,46 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
                     color: Colors.white,
                   ),
                 ),
+              ),
+            ),
+            Positioned(
+              left: 8,
+              bottom: 8,
+              right: 8,
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: Colors.black.withValues(alpha: .55),
+                      border: isSelected
+                          ? Border.all(
+                              color: Colors.white.withValues(alpha: .9),
+                              width: 1,
+                            )
+                          : null,
+                    ),
+                    child: Text(
+                      styleLabel,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (isSelected)
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                ],
               ),
             ),
           ],
@@ -619,14 +823,256 @@ class _PhotoAiPageState extends State<PhotoAiPage> {
               ] else ...[
                 const Icon(Icons.auto_awesome_rounded, size: 18),
                 const SizedBox(width: 8),
-                const Text(
-                  "Generate remix",
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                Text(
+                  _originalUrl == null && _generatedUrls.isEmpty
+                      ? "Generate remix"
+                      : "Generate new remix",
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showImageActionsSheet({
+    required String url,
+    required String styleLabel,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF050509),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 8, bottom: 4),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.fullscreen_rounded,
+                  color: Colors.white,
+                ),
+                title: Text(
+                  "View $styleLabel in full screen",
+                  style: const TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _showFullScreenPreview(url, styleLabel);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.link_rounded, color: Colors.white),
+                title: const Text(
+                  "Copy image link",
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: url));
+                  Navigator.of(ctx).pop();
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(
+                      content: Text("Image link copied to clipboard"),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showFullScreenPreview(String url, String styleLabel) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.85),
+      builder: (ctx) {
+        return GestureDetector(
+          onTap: () => Navigator.of(ctx).pop(),
+          child: Stack(
+            children: [
+              Center(
+                child: Hero(
+                  tag: url,
+                  child: InteractiveViewer(
+                    child: AspectRatio(
+                      aspectRatio: 3 / 4,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.contain,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return _buildShimmerPlaceholder(
+                              borderRadius: 20,
+                              showLabelSkeleton: false,
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) =>
+                              _buildErrorImagePlaceholder(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 24,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        color: Colors.black.withValues(alpha: 0.7),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.style_rounded,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            styleLabel,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ---------- Shimmer & error placeholders ----------
+
+  Widget _buildShimmerPlaceholder({
+    double borderRadius = 20,
+    bool showLabelSkeleton = false,
+  }) {
+    return Shimmer.fromColors(
+      baseColor: const Color(0xFF181826),
+      highlightColor: Colors.white.withValues(alpha: 0.20),
+      period: const Duration(milliseconds: 1100),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(borderRadius),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF10101A), Color(0xFF151522)],
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(borderRadius - 6),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.04),
+                          Colors.white.withValues(alpha: 0.02),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (showLabelSkeleton)
+              Positioned(
+                left: 10,
+                right: 10,
+                bottom: 10,
+                child: Row(
+                  children: [
+                    Container(
+                      height: 14,
+                      width: 70,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        color: Colors.white.withValues(alpha: 0.10),
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      height: 14,
+                      width: 14,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorImagePlaceholder() {
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Icon(
+        Icons.broken_image_outlined,
+        color: Colors.redAccent,
+        size: 32,
       ),
     );
   }

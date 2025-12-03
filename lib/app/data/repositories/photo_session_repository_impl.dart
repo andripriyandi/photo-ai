@@ -1,4 +1,3 @@
-// lib/data/repositories/photo_session_repository_impl.dart
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -44,6 +43,7 @@ class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
         .child(sessionId)
         .child("original.jpg");
 
+    debugPrint('Uploading original image to: ${ref.fullPath}');
     await ref.putFile(file);
     return ref.fullPath;
   }
@@ -53,10 +53,11 @@ class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
     required File originalFile,
   }) async {
     final sessionId = DateTime.now().millisecondsSinceEpoch.toString();
+
     final originalPath = await _uploadOriginal(originalFile, sessionId);
 
     debugPrint(
-      'Calling generateImages as uid=$_uid, originalPath=$originalPath',
+      'Calling generateImages as uid=$_uid, originalPath=$originalPath, sessionId=$sessionId',
     );
 
     final callable = _functions.httpsCallable("generateImages");
@@ -64,9 +65,9 @@ class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
       "originalImagePath": originalPath,
       "sessionId": sessionId,
       "styles": [
-        "Beach vacation, golden hour portrait",
-        "Night city walk, neon lights",
-        "Cozy cafe, laptop, lifestyle shot",
+        "Beach vacation, golden hour portrait, bright daylight, blue ocean, travel aesthetic",
+        "Night city walk, neon lights, urban street portrait, cinematic, moody lighting",
+        "Cozy cafe, laptop, warm indoor light, coffee on table, relaxed lifestyle shot",
       ],
     });
 
@@ -77,6 +78,8 @@ class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
     final generatedPaths = generatedPathsDynamic
         .map((e) => e.toString())
         .toList();
+
+    debugPrint('Generated paths: $generatedPaths');
 
     final docRef = _firestore
         .collection("users")
@@ -91,16 +94,32 @@ class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
       "createdAt": FieldValue.serverTimestamp(),
     });
 
-    final originalUrl = await _storage
+    final originalUrlFuture = _storage
         .ref()
         .child(originalPath)
         .getDownloadURL();
 
-    final generatedUrls = <String>[];
-    for (final path in generatedPaths) {
-      final url = await _storage.ref().child(path).getDownloadURL();
-      generatedUrls.add(url);
-    }
+    final generatedUrlsFuture = Future.wait(
+      generatedPaths.map((path) async {
+        try {
+          return await _storage.ref().child(path).getDownloadURL();
+        } on FirebaseException catch (e) {
+          debugPrint(
+            'Failed to get download URL for $path: ${e.code} ${e.message}',
+          );
+          return null; // skip yang gagal
+        }
+      }),
+    );
+
+    final originalUrl = await originalUrlFuture;
+    final generatedUrls = (await generatedUrlsFuture)
+        .whereType<String>()
+        .toList();
+
+    debugPrint(
+      'Got originalUrl length=${originalUrl.length}, generatedUrls=${generatedUrls.length}',
+    );
 
     return GenerateResult(
       sessionId: sessionId,
