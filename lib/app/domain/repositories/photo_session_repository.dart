@@ -1,9 +1,12 @@
 import 'dart:io';
-
 import '../entities/photo_session.dart';
 
 abstract class PhotoSessionRepository {
-  Future<GenerateResult> createSessionAndGenerate({required File originalFile});
+  Future<GenerateResult> createSessionAndGenerate({
+    required File originalFile,
+    required List<String> styles,
+  });
+
   Stream<List<PhotoSession>> watchSessions();
 }
 

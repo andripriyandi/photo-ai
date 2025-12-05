@@ -6,9 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:photo_ai/app/config/app_config.dart';
-
-import '../../domain/entities/photo_session.dart';
-import '../../domain/repositories/photo_session_repository.dart';
+import 'package:photo_ai/app/domain/entities/photo_session.dart';
+import 'package:photo_ai/app/domain/repositories/photo_session_repository.dart';
 
 class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
   final FirebaseAuth _auth;
@@ -51,24 +50,27 @@ class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
   @override
   Future<GenerateResult> createSessionAndGenerate({
     required File originalFile,
+    required List<String> styles,
   }) async {
+    if (styles.isEmpty) {
+      throw ArgumentError('At least one style must be provided');
+    }
+
     final sessionId = DateTime.now().millisecondsSinceEpoch.toString();
 
     final originalPath = await _uploadOriginal(originalFile, sessionId);
 
+    final selectedScenes = List<String>.from(styles);
+
     debugPrint(
-      'Calling generateImages as uid=$_uid, originalPath=$originalPath, sessionId=$sessionId',
+      'Calling generateImages as uid=$_uid, originalPath=$originalPath, sessionId=$sessionId, styles=$selectedScenes',
     );
 
     final callable = _functions.httpsCallable("generateImages");
     final response = await callable.call<Map<String, dynamic>>({
       "originalImagePath": originalPath,
       "sessionId": sessionId,
-      "styles": [
-        "Beach vacation, golden hour portrait, bright daylight, blue ocean, travel aesthetic",
-        "Night city walk, neon lights, urban street portrait, cinematic, moody lighting",
-        "Cozy cafe, laptop, warm indoor light, coffee on table, relaxed lifestyle shot",
-      ],
+      "styles": selectedScenes,
     });
 
     final data = response.data;
@@ -91,6 +93,7 @@ class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
       "uid": _uid,
       "originalPath": originalPath,
       "generatedPaths": generatedPaths,
+      "styles": selectedScenes,
       "createdAt": FieldValue.serverTimestamp(),
     });
 
@@ -107,7 +110,7 @@ class PhotoSessionRepositoryImpl implements PhotoSessionRepository {
           debugPrint(
             'Failed to get download URL for $path: ${e.code} ${e.message}',
           );
-          return null; // skip yang gagal
+          return null;
         }
       }),
     );

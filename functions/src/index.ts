@@ -45,21 +45,39 @@ export const generateImages = functions
                 );
             }
 
+            if (!styles || styles.length === 0) {
+                throw new functions.https.HttpsError(
+                    "invalid-argument",
+                    "At least one style must be provided.",
+                );
+            }
+
             const bucket = admin.storage().bucket();
             const file = bucket.file(originalImagePath);
 
-            // Download sekali, pakai berulang di semua request ke Gemini
             const [bytes] = await file.download();
             const base64Image = bytes.toString("base64");
 
-            const prompts =
-                styles.length > 0
-                    ? styles
-                    : [
-                        "Travel beach Instagram style photo, bright daylight, blue ocean, warm skin tone",
-                        "Night city break, neon lights, urban street portrait, moody lighting",
-                        "Cozy cafe, laptop, warm indoor light, coffee on table, relaxed pose",
-                    ];
+            const scenePromptMap: Record<string, string> = {
+                Travel:
+                    "Ultra-detailed travel portrait in front of a tropical beach and turquoise ocean, warm golden-hour sunlight, soft shadows, relaxed vacation mood, 35mm lens, shallow depth of field, Instagram travel aesthetic.",
+                CityNight:
+                    "Stylish night street portrait in a dense neon-lit downtown alley, cinematic cyberpunk atmosphere, wet pavement reflections, bokeh lights, teal-and-orange color grade, modern streetwear.",
+                CozyCafe:
+                    "Cozy indoor café portrait at a wooden table, laptop and coffee cup in frame, warm ambient string lights, soft window light from the side, relaxed lifestyle mood, shallow depth of field and subtle film grain.",
+                LuxuryCar:
+                    "High-end lifestyle portrait leaning on a glossy luxury sports car, modern architecture in the background, late afternoon sun, dramatic contrast and reflections, premium magazine photoshoot vibe.",
+                Office:
+                    "Clean LinkedIn-ready office portrait in a bright modern workspace, floor-to-ceiling glass windows with city skyline, laptop and notebook on desk, soft natural light, professional and approachable.",
+                Gym:
+                    "Intense fitness portrait in a modern gym, subject holding weights, defined muscles, strong directional lighting with rim light on shoulders, a hint of sweat, high-contrast fitness campaign style.",
+            };
+
+            const effectiveSceneIds = styles;
+            const prompts = effectiveSceneIds.map((id) => {
+                const prompt = scenePromptMap[id];
+                return prompt ?? id;
+            });
 
             const apiKey =
                 process.env.GEMINI_API_KEY ||
@@ -72,7 +90,6 @@ export const generateImages = functions
                 );
             }
 
-            // array untuk menyimpan path hasil. Index = index prompt
             const generatedPaths: (string | undefined)[] = [];
 
             await Promise.all(
